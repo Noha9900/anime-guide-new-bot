@@ -9,19 +9,32 @@ from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from pyrogram.errors import FloodWait
 
-from config import Config
-
+# --- Event Loop Fix for Python 3.11+ ---
 uvloop.install()
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
 
+# --- Configuration ---
+class Config:
+    API_ID = int(os.environ.get("API_ID", "36982189")) 
+    API_HASH = os.environ.get("API_HASH", "d3ec5feee7342b692e7b5370fb9c8db7")
+    BOT_TOKEN = os.environ.get("BOT_TOKEN", "your_bot_token_here")
+    OWNER_ID = int(os.environ.get("OWNER_ID", "8072674531"))
+    MONGO_URL = os.environ.get("MONGO_URL", "your_mongodb_url_here")
+    MAIN_CHANNEL_LINK = os.environ.get("MAIN_CHANNEL_LINK", "https://t.me/MyAnimeEnglishDub")
+
+# --- Logger Setup ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# --- Database Setup (MongoDB) ---
 mongo_client = AsyncIOMotorClient(Config.MONGO_URL)
 db = mongo_client["AnimeBotDB"]
 anime_collection = db["anime_list"]
 users_collection = db["users"]
 buttons_collection = db["extra_buttons"]
 
+# --- Bot Client ---
 app = Client(
     "AnimeGlassBot",
     api_id=Config.API_ID,
@@ -30,6 +43,7 @@ app = Client(
     sleep_threshold=60 
 )
 
+# --- FloodWait Handler ---
 def flood_handler(func):
     async def wrapper(*args, **kwargs):
         while True:
@@ -43,11 +57,16 @@ def flood_handler(func):
                 break
     return wrapper
 
+# --- Auto Delete Helper ---
 @flood_handler
 async def safe_delete(message, time=600):
     await asyncio.sleep(time)
-    await message.delete()
+    try:
+        await message.delete()
+    except Exception:
+        pass
 
+# --- Anime API Helper ---
 async def get_anime_details(query):
     url = f"https://api.jikan.moe/v4/anime?q={query}&limit=1"
     async with aiohttp.ClientSession() as session:
@@ -57,6 +76,7 @@ async def get_anime_details(query):
                 return data['data'][0]
     return None
 
+# --- Render Port Binding Web Server ---
 async def web_server():
     async def handle(request):
         return web.Response(text="Anime Bot is running ultra-fast!")
@@ -71,6 +91,7 @@ async def web_server():
     await site.start()
     logger.info(f"Web server started on port {port}")
 
+# --- Start Command ---
 @app.on_message(filters.command("start"))
 @flood_handler
 async def start_command(client, message):
@@ -114,6 +135,7 @@ async def start_command(client, message):
     asyncio.create_task(safe_delete(message, 600))
     asyncio.create_task(safe_delete(sent_msg, 600))
 
+# --- Main Menu ---
 @app.on_callback_query(filters.regex("main_menu"))
 @flood_handler
 async def main_menu(client, callback: CallbackQuery):
@@ -153,6 +175,7 @@ async def main_menu(client, callback: CallbackQuery):
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 
+# --- Basic Callbacks ---
 @app.on_callback_query(filters.regex("about_info"))
 async def about_handler(client, callback):
     await callback.answer("We provide the best Anime in English Dub!", show_alert=True)
@@ -169,6 +192,7 @@ async def guide_handler(client, callback):
         quote=True
     )
 
+# --- Search Command ---
 @app.on_message(filters.command("search"))
 @flood_handler
 async def search_anime(client, message):
@@ -208,6 +232,7 @@ async def search_anime(client, message):
 
     asyncio.create_task(safe_delete(message, 600))
 
+# --- Admin Commands ---
 @app.on_message(filters.command("addanime") & filters.user(Config.OWNER_ID))
 @flood_handler
 async def add_anime(client, message):
@@ -237,6 +262,7 @@ async def stats_command(client, message):
     anime_count = await anime_collection.count_documents({})
     await message.reply_text(f"📊 **Database Stats**\n\n👥 Total Users: {users_count}\n🎬 Total Anime: {anime_count}")
 
+# --- Pagination ---
 @app.on_callback_query(filters.regex(r"anime_list_page_(\d+)"))
 @flood_handler
 async def anime_list_handler(client, callback):
@@ -276,6 +302,7 @@ async def anime_list_handler(client, callback):
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 
+# --- Main Execution ---
 async def main():
     logger.info("Starting Web Server...")
     await web_server()
@@ -286,4 +313,5 @@ async def main():
     await app.stop()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Uses the loop we manually created at the top
+    loop.run_until_complete(main())
