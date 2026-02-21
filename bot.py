@@ -10,43 +10,35 @@ from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from pyrogram.errors import FloodWait
 
-# --- Event Loop Fix ---
+# --- Event Loop Optimization ---
 uvloop.install()
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 
-# --- Configuration ---
+# --- Configuration (CHANGE YOUR LINKS HERE!) ---
 class Config:
     API_ID = int(os.environ.get("API_ID", "36982189")) 
     API_HASH = os.environ.get("API_HASH", "d3ec5feee7342b692e7b5370fb9c8db7")
-    BOT_TOKEN = os.environ.get("BOT_TOKEN", "8291835114:AAGK6S_9DCp_ZZbZQUQEuMArh8SccI-CeSk")
-    OWNER_ID = int(os.environ.get("OWNER_ID", "8072674531"))
-    MONGO_URL = os.environ.get("MONGO_URL", "mongodb+srv://leech:leech123@cluster0.fdnowvo.mongodb.net/?appName=Cluster0")
-    MAIN_CHANNEL_LINK = os.environ.get("MAIN_CHANNEL_LINK", "https://t.me/MyAnimeEnglish")
-    RAPIDAPI_KEY = os.environ.get("RAPIDAPI_KEY", "your_rapidapi_key_here")
+    BOT_TOKEN = "8291835114:AAGK6S_9DCp_ZZbZQUQEuMArh8SccI-CeSk"
+    OWNER_ID = 8072674531
+    MONGO_URL = "mongodb+srv://leech:leech123@cluster0.fdnowvo.mongodb.net/?appName=Cluster0"
+    
+    # 🔗 MAIN CHANNEL & SOCIALS
+    MAIN_CHANNEL_LINK = "https://t.me/MyAnimeEnglish"
+    INSTAGRAM_LINK = "https://instagram.com/your_profile"  # <--- Edit this
+    TWITTER_LINK = "https://twitter.com/your_profile"      # <--- Edit this
+    YOUTUBE_LINK = "https://youtube.com/c/your_channel"    # <--- Edit this
+    
+    RAPIDAPI_KEY = "aa36f42fa4msh06760066288f27cp13edaejsn640d7527de2d"
 
-# --- Custom Text Blocks ---
-ABOUT_TEXT = """
-ℹ️ **About MyAnimeEnglish Dub**
-
-Welcome to the ultimate hub for English Dubbed Anime! 
-We provide high-quality anime directly to your Telegram. 
-
-**Bot created by MyAnimeEnglish Dub ⚡️**
-"""
-
-TERMS_TEXT = """
-📜 **Terms & Conditions**
-
-1. **No Spamming:** Do not spam the bot.
-2. **Sharing:** Share channel links, not direct files.
-3. **Respect:** Stay respectful in the community.
-"""
+# --- Text Blocks ---
+ABOUT_TEXT = "ℹ️ **About MyAnimeEnglish Dub**\n\nYour ultimate destination for English Dubbed Anime! Join our channel for high-quality releases and updates."
+TERMS_TEXT = "📜 **Terms & Conditions**\n\n1. No Spamming.\n2. Share channel links, not direct files.\n3. Respect the community."
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --- Database Setup ---
+# --- Database ---
 mongo_client = AsyncIOMotorClient(Config.MONGO_URL, serverSelectionTimeoutMS=5000)
 db = mongo_client["AnimeBotDB"]
 anime_collection = db["anime_list"]
@@ -55,7 +47,7 @@ buttons_collection = db["extra_buttons"]
 
 app = Client("AnimeGlassBot", api_id=Config.API_ID, api_hash=Config.API_HASH, bot_token=Config.BOT_TOKEN)
 
-# --- Logic Helpers ---
+# --- Helpers ---
 def flood_handler(func):
     @functools.wraps(func)
     async def wrapper(*args, **kwargs):
@@ -94,7 +86,7 @@ async def web_server():
     runner = web.AppRunner(web_app); await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", int(os.environ.get("PORT", 8080))).start()
 
-# --- Start Command (Restored Social Buttons) ---
+# --- Start Command ---
 @app.on_message(filters.command("start"))
 @flood_handler
 async def start(c, m):
@@ -110,11 +102,11 @@ async def start(c, m):
     )
     buttons = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("📸 Instagram", url="https://instagram.com"),
-            InlineKeyboardButton("🐦 Twitter", url="https://twitter.com")
+            InlineKeyboardButton("📸 Instagram", url=Config.INSTAGRAM_LINK),
+            InlineKeyboardButton("🐦 Twitter", url=Config.TWITTER_LINK)
         ],
         [
-            InlineKeyboardButton("▶️ YouTube", url="https://youtube.com"),
+            InlineKeyboardButton("▶️ YouTube", url=Config.YOUTUBE_LINK),
             InlineKeyboardButton("✈️ Telegram", url=Config.MAIN_CHANNEL_LINK)
         ],
         [
@@ -131,7 +123,7 @@ async def menu(c, cb):
         [InlineKeyboardButton("📢 Channel", url=Config.MAIN_CHANNEL_LINK), InlineKeyboardButton("ℹ️ About", callback_data="about_info")],
         [InlineKeyboardButton("📜 Terms", callback_data="terms_info")]
     ]
-    # Fetch custom buttons from DB
+    # Dynamically fetch extra buttons added via /addbtn
     extra = await buttons_collection.find().to_list(10)
     for btn in extra: buttons.append([InlineKeyboardButton(btn['name'], url=btn['link'])])
     
@@ -143,7 +135,7 @@ async def menu(c, cb):
 async def search(c, m):
     if len(m.command) < 2: return await m.reply("Usage: `/search Naruto`")
     query = m.text.split(None, 1)[1].lower().replace("nyaa", "").strip()
-    status_msg = await m.reply("🔎 **Searching Database...**")
+    status_msg = await m.reply("🔎 **Searching IMDb...**")
     res = await get_imdb_details(query)
     if res:
         cap = f"🎬 **{res['title']}**\n🗓 **Year:** {res['year']}\n\n**Bot by MyAnimeEnglish Dub ⚡️**"
@@ -175,7 +167,7 @@ async def stats(c, m):
     u = await users_collection.count_documents({}); a = await anime_collection.count_documents({})
     await m.reply(f"📊 **Stats**\n\nUsers: {u}\nAnime in List: {a}")
 
-# --- Info Callbacks ---
+# --- Callbacks ---
 @app.on_callback_query(filters.regex("about_info"))
 async def about_cb(c, cb):
     await cb.message.edit_caption(caption=ABOUT_TEXT, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="main_menu")]]))
