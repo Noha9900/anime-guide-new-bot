@@ -20,9 +20,9 @@ asyncio.set_event_loop(loop)
 class Config:
     API_ID = int(os.environ.get("API_ID", "36982189")) 
     API_HASH = os.environ.get("API_HASH", "d3ec5feee7342b692e7b5370fb9c8db7")
-    BOT_TOKEN = os.environ.get("BOT_TOKEN", "8291835114:AAGK6S_9DCp_ZZbZQUQEuMArh8SccI-CeSk")
+    BOT_TOKEN = os.environ.get("BOT_TOKEN", "your_bot_token_here")
     OWNER_ID = int(os.environ.get("OWNER_ID", "8072674531"))
-    MONGO_URL = os.environ.get("MONGO_URL", "mongodb+srv://leech:leech123@cluster0.fdnowvo.mongodb.net/?appName=Cluster0")
+    MONGO_URL = os.environ.get("MONGO_URL", "your_mongodb_url_here")
     MAIN_CHANNEL_LINK = os.environ.get("MAIN_CHANNEL_LINK", "https://t.me/MyAnimeEnglish")
 
 # ==========================================
