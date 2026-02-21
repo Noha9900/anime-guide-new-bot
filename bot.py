@@ -22,12 +22,41 @@ class Config:
     BOT_TOKEN = "8291835114:AAGK6S_9DCp_ZZbZQUQEuMArh8SccI-CeSk"
     OWNER_ID = 8072674531
     MONGO_URL = "mongodb+srv://leech:leech123@cluster0.fdnowvo.mongodb.net/?appName=Cluster0"
+    
+    # 🔗 MAIN CHANNEL & SOCIALS
     MAIN_CHANNEL_LINK = "https://t.me/MyAnimeEnglish"
+    INSTAGRAM_LINK = "https://instagram.com/your_profile" 
+    TWITTER_LINK = "https://twitter.com/your_profile"     
+    YOUTUBE_LINK = "https://youtube.com/c/your_channel"   
+    
+    # YOUR RAPIDAPI KEY FROM SCREENSHOT
     RAPIDAPI_KEY = "aa36f42fa4msh06760066288f27cp13edaejsn640d7527de2d"
 
-# --- Text Blocks ---
-ABOUT_TEXT = "✨ **MyAnimeEnglish Dub** ✨\nYour destination for HD English Dubbed Anime!🎬\nJoin our channel for series and movies."
-TERMS_TEXT = "📜 **MyAnimeEnglish - Terms**\n1️⃣ No Spam 🚫\n2️⃣ Support us by sharing links! 🤝\n3️⃣ Stay respectful. ✨"
+# --- Updated Professional Text Blocks ---
+ABOUT_TEXT = """
+✨ **MyAnimeEnglish - About Us** ✨
+
+Welcome to the ultimate hub for high-quality **English Dubbed Anime**! 🎬 
+We are dedicated to bringing you the latest series, movies, and episodes directly to Telegram in HD.
+
+🌟 **Why Choose Us?**
+🔥 **Premium Dubs:** Only the best quality audio and video.
+🚀 **Instant Updates:** New episodes uploaded daily.
+📂 **Organized Library:** Easy navigation via our custom bot.
+
+Join our community and dive into the world of anime! 🎌
+"""
+
+TERMS_TEXT = """
+📜 **MyAnimeEnglish - Terms & Conditions**
+
+1️⃣ **No Spamming:** Repeatedly sending commands will result in a temporary ban. 🚫
+2️⃣ **Support the Source:** Please share our channel links instead of direct files to help us grow. 🤝
+3️⃣ **Stay Respectful:** Maintain a positive vibe in our community discussions. ✨
+4️⃣ **Personal Use:** All content is provided for personal viewing only. 🍿
+
+Enjoy your stay and keep watching! ⚔️
+"""
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -41,7 +70,7 @@ buttons_collection = db["extra_buttons"]
 
 app = Client("AnimeGlassBot", api_id=Config.API_ID, api_hash=Config.API_HASH, bot_token=Config.BOT_TOKEN)
 
-# --- Logic Helpers ---
+# --- Helpers ---
 def flood_handler(func):
     @functools.wraps(func)
     async def wrapper(*args, **kwargs):
@@ -75,25 +104,33 @@ async def get_imdb_details(query):
     except: return None
 
 async def web_server():
-    async def handle(r): return web.Response(text="Bot Active")
+    async def handle(r): return web.Response(text="MyAnimeEnglish Bot Active")
     web_app = web.Application(); web_app.router.add_get("/", handle)
     runner = web.AppRunner(web_app); await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", int(os.environ.get("PORT", 8080))).start()
 
-# --- Handlers ---
+# --- Start Command ---
 @app.on_message(filters.command("start"))
 @flood_handler
 async def start(c, m):
     try: await users_collection.update_one({"user_id": m.from_user.id}, {"$set": {"name": m.from_user.first_name}}, upsert=True)
     except: pass
     welcome_photo = "https://i.postimg.cc/pL5ZYCwc/photo-2026-02-21-16-00-36.jpg"
-    welcome_text = f"✨🎌 **Konnichiwa, {m.from_user.mention}!** 🎌✨\n\nWelcome to **MyAnimeEnglish bot!** 🎬"
+    welcome_text = (
+        f"✨🎌 **Konnichiwa, {m.from_user.mention}!** 🎌✨\n\n"
+        f"🎊 **Welcome to MyAnimeEnglish bot!** 🎊\n"
+        f"🎬 *Your destination for HD English Dubbed Anime* 🍿⚔️\n\n"
+        f"🤖 **Status:** 🟢 *Online & Ready!* ⚡️\n\n"
+        f"📣 Join our official channel to support us! 🚀"
+    )
     buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✈️ Join Channel", url=Config.MAIN_CHANNEL_LINK)],
+        [InlineKeyboardButton("📸 Instagram", url=Config.INSTAGRAM_LINK), InlineKeyboardButton("🐦 Twitter", url=Config.TWITTER_LINK)],
+        [InlineKeyboardButton("▶️ YouTube", url=Config.YOUTUBE_LINK), InlineKeyboardButton("✈️ Telegram", url=Config.MAIN_CHANNEL_LINK)],
         [InlineKeyboardButton("➡️ SKIP / CONTINUE ➡️", callback_data="main_menu")]
     ])
     await m.reply_photo(photo=welcome_photo, caption=welcome_text, reply_markup=buttons)
 
+# --- Main Menu ---
 @app.on_callback_query(filters.regex("main_menu"))
 async def menu(c, cb):
     await cb.answer()
@@ -104,75 +141,90 @@ async def menu(c, cb):
     ]
     extra = await buttons_collection.find().to_list(10)
     for btn in extra: buttons.append([InlineKeyboardButton(btn['name'], url=btn['link'])])
-    await cb.message.edit_caption(caption="⛩ **Main Menu** ⛩", reply_markup=InlineKeyboardMarkup(buttons))
+    await cb.message.edit_caption(caption="⛩ **Main Menu** ⛩\n\nSelect an option below to browse.", reply_markup=InlineKeyboardMarkup(buttons))
 
-# --- Global Guide Search (IMDb) ---
+# --- Global Guide Search Handler ---
 @app.on_message(filters.command("search"))
 @flood_handler
 async def search(c, m):
     if len(m.command) < 2: return await m.reply("Usage: `/search Naruto`")
     query = m.text.split(None, 1)[1].lower().replace("nyaa", "").strip()
-    status_msg = await m.reply("🔎 **Searching Global IMDb Database...**")
+    status_msg = await m.reply("🔎 **Searching Global Database...**")
     res = await get_imdb_details(query)
     if res:
-        cap = f"🎬 **Global Anime Guide**\n\n📌 **Title:** `{res['title']}`\n📅 **Year:** `{res['year']}`\n\n✅ Search this title in our channel for download links! 🚀"
+        cap = (
+            f"🎬 **MyAnimeEnglish Search Results**\n\n"
+            f"📌 **Title:** `{res['title']}`\n"
+            f"📅 **Year:** `{res['year']}`\n\n"
+            f"✅ **More Details:** Search this title in our channel for high-quality download links! 🚀"
+        )
         btn = InlineKeyboardMarkup([[InlineKeyboardButton("🔗 View on IMDb", url=f"https://www.imdb.com/title/{res['id']}") ]])
         sent = await m.reply_photo(res['image'], caption=cap, reply_markup=btn)
         await status_msg.delete()
         asyncio.create_task(safe_delete(sent, 600))
-    else: await status_msg.edit("❌ Anime not found in database!")
+    else: await status_msg.edit("❌ Anime not found in global database. Try another name!")
 
-# --- Admin Controls ---
+# --- Guide Button Handler ---
+@app.on_callback_query(filters.regex("guide_info"))
+async def guide_cb(c, cb):
+    await cb.answer()
+    guide_text = (
+        "🔎 **MyAnimeEnglish Global Guide**\n\n"
+        "To find information on any anime globally, simply use the command below:\n\n"
+        "📌 **Command:** `/search [Anime Name]`\n"
+        "📌 **Example:** `/search Jujutsu Kaisen`"
+    )
+    await cb.message.edit_caption(caption=guide_text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="main_menu")]]))
+
+# --- Admin Commands ---
 @app.on_message(filters.command("addanime") & filters.user(Config.OWNER_ID))
 async def add_anime(c, m):
     try:
         n, l = m.text.split(" ", 1)[1].split("|")
         await anime_collection.insert_one({"name": n.strip(), "link": l.strip()})
-        await m.reply(f"✅ Added **{n.strip()}** to your Anime List.")
+        await m.reply(f"✅ Added **{n.strip()}** to the list.")
     except: await m.reply("Format: `/addanime Name | Link`")
 
 @app.on_message(filters.command("stats") & filters.user(Config.OWNER_ID))
 async def stats(c, m):
     u = await users_collection.count_documents({}); a = await anime_collection.count_documents({})
-    await m.reply(f"📊 **Stats**\n\nUsers: {u}\nAnime in List: {a}")
+    await m.reply(f"📊 **MyAnimeEnglish Stats**\n\nUsers: {u}\nAnime in List: {a}")
 
-# --- Navigation Handlers ---
-@app.on_callback_query(filters.regex("guide_info"))
-async def guide_cb(c, cb):
+# --- Information Callbacks ---
+@app.on_callback_query(filters.regex("about_info"))
+async def about_cb(c, cb):
     await cb.answer()
-    await cb.message.edit_caption(caption="🔎 **Global Guide**\n\nSearch any anime to see its details and release year.\n\n**Command:** `/search [Anime Name]`\n**Example:** `/search Naruto`", 
-                                  reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="main_menu")]]))
+    await cb.message.edit_caption(caption=ABOUT_TEXT, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="main_menu")]]))
 
+@app.on_callback_query(filters.regex("terms_info"))
+async def terms_cb(c, cb):
+    await cb.answer()
+    await cb.message.edit_caption(caption=TERMS_TEXT, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="main_menu")]]))
+
+# --- Channel Anime List Pagination ---
 @app.on_callback_query(filters.regex(r"anime_list_page_(\d+)"))
 async def list_pg(c, cb):
     page = int(cb.matches[0].group(1))
     total = await anime_collection.count_documents({})
     items = await anime_collection.find().skip(page*10).limit(10).to_list(10)
-    if not items: return await cb.answer("Your channel list is currently empty!", show_alert=True)
+    if not items: return await cb.answer("The list is currently empty!", show_alert=True)
     await cb.answer()
     
-    # Create buttons for your channel posts
     btns = [[InlineKeyboardButton(f"🎬 {i['name']}", url=i['link'])] for i in items]
-    
-    # Page Navigation Logic
     nav = []
     if page > 0: nav.append(InlineKeyboardButton("⬅️ Back", callback_data=f"anime_list_page_{page-1}"))
-    nav.append(InlineKeyboardButton("🏠 Menu", callback_data="main_menu"))
+    nav.append(InlineKeyboardButton("🏠 Home", callback_data="main_menu"))
     if total > (page+1)*10: nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"anime_list_page_{page+1}"))
     btns.append(nav)
     
-    await cb.message.edit_caption(caption=f"📂 **My Channel List - Page {page+1}**\n\nThese are the anime uploaded in our channel.", reply_markup=InlineKeyboardMarkup(btns))
+    await cb.message.edit_caption(caption=f"📂 **Channel Anime List - Page {page+1}**", reply_markup=InlineKeyboardMarkup(btns))
 
-@app.on_callback_query(filters.regex("about_info"))
-async def about_cb(c, cb):
-    await cb.answer(); await cb.message.edit_caption(caption=ABOUT_TEXT, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="main_menu")]]))
-
-@app.on_callback_query(filters.regex("terms_info"))
-async def terms_cb(c, cb):
-    await cb.answer(); await cb.message.edit_caption(caption=TERMS_TEXT, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="main_menu")]]))
-
+# --- Execution ---
 async def main():
-    await web_server(); await app.start(); from pyrogram import idle; await idle()
+    await web_server()
+    await app.start()
+    from pyrogram import idle
+    await idle()
 
 if __name__ == "__main__":
     loop.run_until_complete(main())
