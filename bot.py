@@ -3,15 +3,14 @@ import logging
 import os
 import uvloop
 import functools
-from aiohttp import web
 import aiohttp
+from aiohttp import web
 from motor.motor_asyncio import AsyncIOMotorClient
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from pyrogram.errors import FloodWait
-from imdb import Cinemagoer
 
-# --- Event Loop Fix for Python 3.11+ ---
+# --- Event Loop Fix ---
 uvloop.install()
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
@@ -20,22 +19,18 @@ asyncio.set_event_loop(loop)
 class Config:
     API_ID = int(os.environ.get("API_ID", "36982189")) 
     API_HASH = os.environ.get("API_HASH", "d3ec5feee7342b692e7b5370fb9c8db7")
-    BOT_TOKEN = os.environ.get("BOT_TOKEN", "your_bot_token_here")
+    BOT_TOKEN = os.environ.get("BOT_TOKEN", "8291835114:AAGK6S_9DCp_ZZbZQUQEuMArh8SccI-CeSk")
     OWNER_ID = int(os.environ.get("OWNER_ID", "8072674531"))
-    MONGO_URL = os.environ.get("MONGO_URL", "your_mongodb_url_here")
+    MONGO_URL = os.environ.get("MONGO_URL", "mongodb+srv://leech:leech123@cluster0.fdnowvo.mongodb.net/?appName=Cluster0")
     MAIN_CHANNEL_LINK = os.environ.get("MAIN_CHANNEL_LINK", "https://t.me/MyAnimeEnglish")
+    RAPIDAPI_KEY = os.environ.get("RAPIDAPI_KEY", "your_rapidapi_key_here")
 
-# ==========================================
-# 📝 EDIT YOUR CUSTOM TEXT HERE
-# ==========================================
-
+# --- Custom Text Blocks ---
 ABOUT_TEXT = """
 ℹ️ **About MyAnimeEnglish Dub**
 
 Welcome to the ultimate hub for English Dubbed Anime! 
-We are dedicated to providing high-quality anime directly to your Telegram. 
-
-Make sure to join our main channel to stay updated with the latest episodes, movies, and ongoing series.
+We provide high-quality anime directly to your Telegram. 
 
 **Bot created by MyAnimeEnglish Dub ⚡️**
 """
@@ -43,162 +38,76 @@ Make sure to join our main channel to stay updated with the latest episodes, mov
 TERMS_TEXT = """
 📜 **Terms & Conditions**
 
-By using this bot and our channels, you agree to the following:
-1. **No Spamming:** Do not spam the bot with constant commands.
-2. **Sharing:** If you want to share our content, share the channel link, not the direct file files.
-3. **Respect:** Be respectful in the comments section of our channel.
-4. **Enjoy:** Grab some popcorn and enjoy the best English dubs!
-
-**Bot created by MyAnimeEnglish Dub ⚡️**
+1. **No Spamming:** Do not spam the bot.
+2. **Sharing:** Share channel links, not direct files.
+3. **Respect:** Stay respectful in the community.
 """
 
-# ==========================================
-
-# --- Logger Setup ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --- Database Setup (MongoDB) ---
+# --- Database Setup ---
 mongo_client = AsyncIOMotorClient(Config.MONGO_URL, serverSelectionTimeoutMS=5000)
 db = mongo_client["AnimeBotDB"]
 anime_collection = db["anime_list"]
 users_collection = db["users"]
 buttons_collection = db["extra_buttons"]
 
-# --- Bot Client ---
-app = Client(
-    "AnimeGlassBot",
-    api_id=Config.API_ID,
-    api_hash=Config.API_HASH,
-    bot_token=Config.BOT_TOKEN,
-    sleep_threshold=60 
-)
+app = Client("AnimeGlassBot", api_id=Config.API_ID, api_hash=Config.API_HASH, bot_token=Config.BOT_TOKEN)
 
-# --- FloodWait Handler ---
+# --- Logic Helpers ---
 def flood_handler(func):
     @functools.wraps(func)
     async def wrapper(*args, **kwargs):
         while True:
-            try:
-                return await func(*args, **kwargs)
-            except FloodWait as e:
-                logger.warning(f"Sleeping for {e.value} seconds due to FloodWait...")
-                await asyncio.sleep(e.value + 1)
-            except Exception as e:
-                logger.error(f"Error in {func.__name__}: {e}")
-                if len(args) > 1 and hasattr(args[1], "reply_text"):
-                    try:
-                        await args[1].reply_text(f"⚠️ Command Error: `{e}`")
-                    except: pass
-                break
+            try: return await func(*args, **kwargs)
+            except FloodWait as e: await asyncio.sleep(e.value + 1)
+            except Exception as e: logger.error(f"Error: {e}"); break
     return wrapper
 
-# --- Auto Delete Helper ---
 @flood_handler
 async def safe_delete(message, time=600):
     await asyncio.sleep(time)
-    try:
-        await message.delete()
-    except Exception:
-        pass
-
-# --- IMDb API Helper ---
-ia = Cinemagoer()
-
-def fetch_imdb_sync(query):
-    try:
-        results = ia.search_movie(query)
-        if not results:
-            return None
-        
-        show = results[0]
-        ia.update(show, info=['main'])
-        
-        if show.get('kind') in ['tv series', 'tv mini series', 'tv show']:
-            ia.update(show, info=['episodes'])
-            total_episodes = 0
-            if 'episodes' in show:
-                for season in show['episodes']:
-                    total_episodes += len(show['episodes'][season])
-            status = "TV Series"
-        else:
-            total_episodes = "N/A (Movie)"
-            status = "Movie"
-
-        title = show.get('title', 'Unknown')
-        year = show.get('year', 'Unknown')
-        rating = show.get('rating', 'N/A')
-        genres = ", ".join(show.get('genres', ['Unknown']))
-        
-        plot = show.get('plot', ['No synopsis available.'])[0]
-        if "::" in plot:
-            plot = plot.split("::")[0] 
-        
-        # Safe Wikimedia fallback image
-        poster_url = show.get('full-size cover url', "https://files.catbox.moe/dhatqa.jpg")
-        imdb_id = show.getID()
-        imdb_url = f"https://www.imdb.com/title/tt{imdb_id}/"
-
-        return {
-            "title": f"{title} ({year})",
-            "rating": rating,
-            "episodes": total_episodes,
-            "status": status,
-            "genres": genres,
-            "synopsis": plot[:400] + "...",
-            "url": imdb_url,
-            "image": poster_url
-        }
-    except Exception as e:
-        logger.error(f"IMDb Error: {e}")
-        return None
+    try: await message.delete()
+    except: pass
 
 async def get_imdb_details(query):
-    return await asyncio.to_thread(fetch_imdb_sync, query)
+    url = "https://imdb-com.p.rapidapi.com/auto-complete"
+    headers = {"X-RapidAPI-Key": Config.RAPIDAPI_KEY, "X-RapidAPI-Host": "imdb-com.p.rapidapi.com"}
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, params={"q": query}) as resp:
+                data = await resp.json()
+                if data and 'd' in data:
+                    item = data['d'][0]
+                    return {
+                        "title": item.get('l'), 
+                        "year": item.get('y'), 
+                        "id": item.get('id'), 
+                        "image": item.get('i', {}).get('imageUrl', "https://i.postimg.cc/pL5ZYCwc/photo-2026-02-21-16-00-36.jpg")
+                    }
+    except: return None
 
-# --- Render Port Binding Web Server ---
 async def web_server():
-    async def handle(request):
-        return web.Response(text="Anime Bot is running ultra-fast!")
-    
-    web_app = web.Application()
-    web_app.router.add_get("/", handle)
-    runner = web.AppRunner(web_app)
-    await runner.setup()
-    
-    port = int(os.environ.get("PORT", 8080))
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    await site.start()
-    logger.info(f"Web server started on port {port}")
+    async def handle(r): return web.Response(text="Bot Status: Active")
+    web_app = web.Application(); web_app.router.add_get("/", handle)
+    runner = web.AppRunner(web_app); await runner.setup()
+    await web.TCPSite(runner, "0.0.0.0", int(os.environ.get("PORT", 8080))).start()
 
-# --- Start Command ---
+# --- Start Command (Restored Social Buttons) ---
 @app.on_message(filters.command("start"))
 @flood_handler
-async def start_command(client, message):
-    user_id = message.from_user.id
-    
-    try:
-        await users_collection.update_one(
-            {"user_id": user_id}, 
-            {"$set": {"name": message.from_user.first_name}}, 
-            upsert=True
-        )
-    except Exception as e:
-        logger.error(f"MongoDB connection failed: {e}")
-
-    # Safe Wikimedia URL to prevent 400 Webpage Error
+async def start(c, m):
+    try: await users_collection.update_one({"user_id": m.from_user.id}, {"$set": {"name": m.from_user.first_name}}, upsert=True)
+    except: pass
     welcome_photo = "https://i.postimg.cc/pL5ZYCwc/photo-2026-02-21-16-00-36.jpg"
-    
-    # Updated Welcome Text with Anime Theme & Emojis
     welcome_text = (
-        f"✨🎌 **Konnichiwa, {message.from_user.mention}!** 🎌✨\n\n"
+        f"✨🎌 **Konnichiwa, {m.from_user.mention}!** 🎌✨\n\n"
         f"🎊 **Welcome to MyAnimeEnglish bot!** 🎊\n"
-        f"🎬 *Your ultimate destination for HD English Dubbed Anime* 🍿⚔️\n\n"
-        f"🤖 **Bot Status:** 🟢 *Online & Ready for Action!* ⚡️\n\n"
-        f"👇 **Quick Step:**\n"
-        f"📣 Please follow our official social media channels to support us, or press **SKIP** to dive straight into the anime list! 🚀"
+        f"🎬 *Your destination for HD English Dubbed Anime* 🍿⚔️\n\n"
+        f"🤖 **Status:** 🟢 *Online & Ready!* ⚡️\n\n"
+        f"📣 Please follow our official social media channels to support us! 🚀"
     )
-
     buttons = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("📸 Instagram", url="https://instagram.com"),
@@ -212,203 +121,91 @@ async def start_command(client, message):
             InlineKeyboardButton("➡️ SKIP / CONTINUE ➡️", callback_data="main_menu")
         ]
     ])
-
-    sent_msg = await message.reply_photo(
-        photo=welcome_photo,
-        caption=welcome_text,
-        reply_markup=buttons
-    )
-    
-    asyncio.create_task(safe_delete(message, 600))
-    asyncio.create_task(safe_delete(sent_msg, 600))
+    await m.reply_photo(photo=welcome_photo, caption=welcome_text, reply_markup=buttons)
 
 # --- Main Menu ---
 @app.on_callback_query(filters.regex("main_menu"))
-@flood_handler
-async def main_menu(client, callback: CallbackQuery):
-    text = (
-        "⛩ **Main Menu** ⛩\n\n"
-        "Select an option below to browse anime, get info, or check our channels.\n\n"
-        "**Bot created by MyAnimeEnglish Dub ⚡️**"
-    )
-    
+async def menu(c, cb):
     buttons = [
-        [
-            InlineKeyboardButton("🔍 Anime Guide (IMDb)", callback_data="guide_info"),
-            InlineKeyboardButton("📂 Anime List", callback_data="anime_list_page_0")
-        ],
-        [
-            InlineKeyboardButton("📢 Main Channel", url=Config.MAIN_CHANNEL_LINK),
-            InlineKeyboardButton("ℹ️ Channel About", callback_data="about_info")
-        ],
-        [
-             InlineKeyboardButton("📜 Terms & Conditions", callback_data="terms_info")
-        ]
+        [InlineKeyboardButton("🔍 Guide", callback_data="guide_info"), InlineKeyboardButton("📂 List", callback_data="anime_list_page_0")],
+        [InlineKeyboardButton("📢 Channel", url=Config.MAIN_CHANNEL_LINK), InlineKeyboardButton("ℹ️ About", callback_data="about_info")],
+        [InlineKeyboardButton("📜 Terms", callback_data="terms_info")]
     ]
+    # Fetch custom buttons from DB
+    extra = await buttons_collection.find().to_list(10)
+    for btn in extra: buttons.append([InlineKeyboardButton(btn['name'], url=btn['link'])])
+    
+    await cb.message.edit_caption(caption="⛩ **Main Menu** ⛩\n\nSelect an option below to browse.", reply_markup=InlineKeyboardMarkup(buttons))
 
-    try:
-        extra_btns = await buttons_collection.find().to_list(length=10)
-        if extra_btns:
-            temp_row = []
-            for btn in extra_btns:
-                temp_row.append(InlineKeyboardButton(btn['name'], url=btn['link']))
-                if len(temp_row) == 2:
-                    buttons.append(temp_row)
-                    temp_row = []
-            if temp_row:
-                buttons.append(temp_row)
-    except Exception:
-        pass 
-
-    try:
-        await callback.message.edit_caption(
-            caption=text,
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
-    except Exception:
-        pass 
-
-# --- Basic Callbacks ---
-@app.on_callback_query(filters.regex("about_info"))
-async def about_handler(client, callback):
-    back_btn = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")]])
-    await callback.message.edit_caption(caption=ABOUT_TEXT, reply_markup=back_btn)
-
-@app.on_callback_query(filters.regex("terms_info"))
-async def terms_handler(client, callback):
-    back_btn = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")]])
-    await callback.message.edit_caption(caption=TERMS_TEXT, reply_markup=back_btn)
-
-@app.on_callback_query(filters.regex("guide_info"))
-@flood_handler
-async def guide_handler(client, callback):
-    await callback.message.reply_text(
-        "🔎 **Anime Guide Search**\n\nSend the name of the anime you want to search for.\nExample: `/search Naruto`",
-        quote=True
-    )
-
-# --- Search Command (IMDb Version) ---
+# --- Search Command ---
 @app.on_message(filters.command("search"))
 @flood_handler
-async def search_anime(client, message):
-    if len(message.command) < 2:
-        await message.reply_text("⚠️ Please provide an anime name.\nExample: `/search Jujutsu Kaisen`")
-        return
-
-    # Automatically sanitize input to remove tracker keywords like "nyaa" so searches don't break
-    query = " ".join(message.command[1:])
-    query = query.lower().replace("nyaa", "").strip()
-
-    m = await message.reply_text(f"🔎 **Searching IMDb for '{query}'...**\n*(This takes a few seconds to calculate episodes)*")
-    
-    details = await get_imdb_details(query)
-    
-    if details:
-        caption = (
-            f"🎬 **{details['title']}**\n\n"
-            f"⭐️ **IMDb Rating:** {details['rating']}/10\n"
-            f"📺 **Total Episodes:** {details['episodes']}\n"
-            f"📡 **Type:** {details['status']}\n"
-            f"🎭 **Genres:** {details['genres']}\n\n"
-            f"📖 **Synopsis:** {details['synopsis']}\n\n"
-            f"**Bot created by MyAnimeEnglish Dub ⚡️**"
-        )
-        
-        btn = InlineKeyboardMarkup([[InlineKeyboardButton("More Info on IMDb", url=details['url'])]])
-        
-        await message.reply_photo(details['image'], caption=caption, reply_markup=btn)
-        await m.delete()
-    else:
-        await m.edit_text("❌ Series or Movie not found on IMDb. Try checking the spelling.")
-
-    asyncio.create_task(safe_delete(message, 600))
+async def search(c, m):
+    if len(m.command) < 2: return await m.reply("Usage: `/search Naruto`")
+    query = m.text.split(None, 1)[1].lower().replace("nyaa", "").strip()
+    status_msg = await m.reply("🔎 **Searching Database...**")
+    res = await get_imdb_details(query)
+    if res:
+        cap = f"🎬 **{res['title']}**\n🗓 **Year:** {res['year']}\n\n**Bot by MyAnimeEnglish Dub ⚡️**"
+        btn = InlineKeyboardMarkup([[InlineKeyboardButton("View Details", url=f"https://www.imdb.com/title/{res['id']}") ]])
+        sent = await m.reply_photo(res['image'], caption=cap, reply_markup=btn)
+        await status_msg.delete()
+        asyncio.create_task(safe_delete(sent, 600))
+    else: await status_msg.edit("❌ Not Found.")
 
 # --- Admin Commands ---
 @app.on_message(filters.command("addanime") & filters.user(Config.OWNER_ID))
-@flood_handler
-async def add_anime(client, message):
+async def add_anime(c, m):
     try:
-        text_data = message.text.split(" ", 1)[1]
-        name, link = text_data.split("|")
-        await anime_collection.insert_one({"name": name.strip(), "link": link.strip()})
-        await message.reply_text(f"✅ Added **{name.strip()}** to the Anime List.\nUsers will now be redirected to: {link.strip()}")
-    except Exception as e:
-        await message.reply_text(f"⚠️ Error. Format: `/addanime Anime Name | Post_Link`\nDB Error: {e}")
+        n, l = m.text.split(" ", 1)[1].split("|")
+        await anime_collection.insert_one({"name": n.strip(), "link": l.strip()})
+        await m.reply(f"✅ Added **{n.strip()}** to the list.")
+    except: await m.reply("Format: `/addanime Name | Link`")
 
 @app.on_message(filters.command("addbtn") & filters.user(Config.OWNER_ID))
-@flood_handler
-async def add_button(client, message):
+async def add_btn(c, m):
     try:
-        text_data = message.text.split(" ", 1)[1]
-        name, link = text_data.split("|")
-        await buttons_collection.insert_one({"name": name.strip(), "link": link.strip()})
-        await message.reply_text(f"✅ Added button **{name.strip()}** to Main Menu.")
-    except Exception as e:
-        await message.reply_text(f"⚠️ Error. Format: `/addbtn Button Name | Link`\nDB Error: {e}")
+        n, l = m.text.split(" ", 1)[1].split("|")
+        await buttons_collection.insert_one({"name": n.strip(), "link": l.strip()})
+        await m.reply(f"✅ Button **{n.strip()}** added to menu.")
+    except: await m.reply("Format: `/addbtn Name | Link`")
 
 @app.on_message(filters.command("stats") & filters.user(Config.OWNER_ID))
-@flood_handler
-async def stats_command(client, message):
-    try:
-        users_count = await users_collection.count_documents({})
-        anime_count = await anime_collection.count_documents({})
-        await message.reply_text(f"📊 **Database Stats**\n\n👥 Total Users: {users_count}\n🎬 Total Anime: {anime_count}")
-    except Exception as e:
-         await message.reply_text("⚠️ **Database Error!** Ensure your MongoDB URL is correct and your IP is whitelisted under Network Access in Atlas.")
+async def stats(c, m):
+    u = await users_collection.count_documents({}); a = await anime_collection.count_documents({})
+    await m.reply(f"📊 **Stats**\n\nUsers: {u}\nAnime in List: {a}")
+
+# --- Info Callbacks ---
+@app.on_callback_query(filters.regex("about_info"))
+async def about_cb(c, cb):
+    await cb.message.edit_caption(caption=ABOUT_TEXT, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="main_menu")]]))
+
+@app.on_callback_query(filters.regex("terms_info"))
+async def terms_cb(c, cb):
+    await cb.message.edit_caption(caption=TERMS_TEXT, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="main_menu")]]))
 
 # --- Pagination ---
 @app.on_callback_query(filters.regex(r"anime_list_page_(\d+)"))
-@flood_handler
-async def anime_list_handler(client, callback):
-    page = int(callback.matches[0].group(1))
-    limit = 10 
-    skip = page * limit
+async def list_pg(c, cb):
+    page = int(cb.matches[0].group(1))
+    total = await anime_collection.count_documents({})
+    items = await anime_collection.find().skip(page*10).limit(10).to_list(10)
+    if not items: return await cb.answer("The list is currently empty!", show_alert=True)
     
-    try:
-        total_anime = await anime_collection.count_documents({})
-        cursor = anime_collection.find().skip(skip).limit(limit)
-        anime_list = await cursor.to_list(length=limit)
-    except Exception:
-        await callback.answer("Database connection failed!", show_alert=True)
-        return
-    
-    if not anime_list:
-        await callback.answer("No anime found in the list yet. Admin needs to add them!", show_alert=True)
-        return
+    btns = [[InlineKeyboardButton(f"🎬 {i['name']}", url=i['link'])] for i in items]
+    nav = []
+    if page > 0: nav.append(InlineKeyboardButton("⬅️ Back", callback_data=f"anime_list_page_{page-1}"))
+    nav.append(InlineKeyboardButton("🏠 Home", callback_data="main_menu"))
+    if total > (page+1)*10: nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"anime_list_page_{page+1}"))
+    btns.append(nav)
+    await cb.message.edit_caption(caption=f"📂 **Anime List - Page {page+1}**", reply_markup=InlineKeyboardMarkup(btns))
 
-    buttons = []
-    row = []
-    for anime in anime_list:
-        row.append(InlineKeyboardButton(f"🎬 {anime['name']}", url=anime['link']))
-        if len(row) == 2:
-            buttons.append(row)
-            row = []
-    if row:
-        buttons.append(row)
-
-    nav_buttons = []
-    if page > 0:
-        nav_buttons.append(InlineKeyboardButton("⬅️ Back", callback_data=f"anime_list_page_{page-1}"))
-    nav_buttons.append(InlineKeyboardButton("🏠 Home", callback_data="main_menu"))
-    if total_anime > skip + limit:
-        nav_buttons.append(InlineKeyboardButton("Next ➡️", callback_data=f"anime_list_page_{page+1}"))
-    
-    buttons.append(nav_buttons)
-
-    await callback.message.edit_caption(
-        caption=f"📂 **Anime List - Page {page+1}**\n\nClick an anime to go directly to its download/watch post in our channel.",
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
-
-# --- Main Execution ---
+# --- Runner ---
 async def main():
-    logger.info("Starting Web Server...")
     await web_server()
-    logger.info("Starting Bot...")
     await app.start()
     from pyrogram import idle
     await idle()
-    await app.stop()
 
 if __name__ == "__main__":
     loop.run_until_complete(main())
