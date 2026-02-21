@@ -187,7 +187,7 @@ async def start_command(client, message):
         logger.error(f"MongoDB connection failed: {e}")
 
     # Safe Wikimedia URL to prevent 400 Webpage Error
-    welcome_photo = "https://upload.wikimedia.org/wikipedia/commons/7/70/Anime_collage_2.jpg"
+    welcome_photo = "https://i.postimg.cc/pL5ZYCwc/photo-2026-02-21-16-00-36.jpg"
     
     # Updated Welcome Text with Anime Theme & Emojis
     welcome_text = (
