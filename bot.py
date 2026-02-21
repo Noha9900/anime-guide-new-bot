@@ -24,9 +24,9 @@ class Config:
     MONGO_URL = "mongodb+srv://leech:leech123@cluster0.fdnowvo.mongodb.net/?appName=Cluster0"
     
     MAIN_CHANNEL_LINK = "https://t.me/MyAnimeEnglish"
-    INSTAGRAM_LINK = "https://instagram.com/your_profile" 
-    TWITTER_LINK = "https://twitter.com/your_profile"     
-    YOUTUBE_LINK = "https://youtube.com/c/your_channel"   
+    INSTAGRAM_LINK = "https://" 
+    TWITTER_LINK = "https://"     
+    YOUTUBE_LINK = "https://"   
     
     RAPIDAPI_KEY = "aa36f42fa4msh06760066288f27cp13edaejsn640d7527de2d"
 
