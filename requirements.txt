@@ -4,4 +4,3 @@ motor
 dnspython
 aiohttp
 uvloop
-cinemagoer
