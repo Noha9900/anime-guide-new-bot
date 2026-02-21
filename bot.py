@@ -9,6 +9,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from pyrogram.errors import FloodWait
+from imdb import Cinemagoer
 
 # --- Event Loop Fix for Python 3.11+ ---
 uvloop.install()
@@ -23,6 +24,35 @@ class Config:
     OWNER_ID = int(os.environ.get("OWNER_ID", "8072674531"))
     MONGO_URL = os.environ.get("MONGO_URL", "your_mongodb_url_here")
     MAIN_CHANNEL_LINK = os.environ.get("MAIN_CHANNEL_LINK", "https://t.me/MyAnimeEnglishDub")
+
+# ==========================================
+# 📝 EDIT YOUR CUSTOM TEXT HERE
+# ==========================================
+
+ABOUT_TEXT = """
+ℹ️ **About MyAnimeEnglish Dub**
+
+Welcome to the ultimate hub for English Dubbed Anime! 
+We are dedicated to providing high-quality anime directly to your Telegram. 
+
+Make sure to join our main channel to stay updated with the latest episodes, movies, and ongoing series.
+
+**Bot created by MyAnimeEnglish Dub ⚡️**
+"""
+
+TERMS_TEXT = """
+📜 **Terms & Conditions**
+
+By using this bot and our channels, you agree to the following:
+1. **No Spamming:** Do not spam the bot with constant commands.
+2. **Sharing:** If you want to share our content, share the channel link, not the direct file files.
+3. **Respect:** Be respectful in the comments section of our channel.
+4. **Enjoy:** Grab some popcorn and enjoy the best English dubs!
+
+**Bot created by MyAnimeEnglish Dub ⚡️**
+"""
+
+# ==========================================
 
 # --- Logger Setup ---
 logging.basicConfig(level=logging.INFO)
@@ -44,7 +74,7 @@ app = Client(
     sleep_threshold=60 
 )
 
-# --- FloodWait Handler (Fixed with functools) ---
+# --- FloodWait Handler ---
 def flood_handler(func):
     @functools.wraps(func)
     async def wrapper(*args, **kwargs):
@@ -56,7 +86,6 @@ def flood_handler(func):
                 await asyncio.sleep(e.value + 1)
             except Exception as e:
                 logger.error(f"Error in {func.__name__}: {e}")
-                # Alert the chat if possible so it doesn't fail silently
                 if len(args) > 1 and hasattr(args[1], "reply_text"):
                     try:
                         await args[1].reply_text(f"⚠️ Command Error: `{e}`")
@@ -73,15 +102,58 @@ async def safe_delete(message, time=600):
     except Exception:
         pass
 
-# --- Anime API Helper ---
-async def get_anime_details(query):
-    url = f"https://api.jikan.moe/v4/anime?q={query}&limit=1"
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as resp:
-            data = await resp.json()
-            if data.get('data'):
-                return data['data'][0]
-    return None
+# --- IMDb API Helper ---
+ia = Cinemagoer()
+
+def fetch_imdb_sync(query):
+    try:
+        results = ia.search_movie(query)
+        if not results:
+            return None
+        
+        show = results[0]
+        ia.update(show, info=['main'])
+        
+        if show.get('kind') in ['tv series', 'tv mini series', 'tv show']:
+            ia.update(show, info=['episodes'])
+            total_episodes = 0
+            if 'episodes' in show:
+                for season in show['episodes']:
+                    total_episodes += len(show['episodes'][season])
+            status = "TV Series"
+        else:
+            total_episodes = "N/A (Movie)"
+            status = "Movie"
+
+        title = show.get('title', 'Unknown')
+        year = show.get('year', 'Unknown')
+        rating = show.get('rating', 'N/A')
+        genres = ", ".join(show.get('genres', ['Unknown']))
+        
+        plot = show.get('plot', ['No synopsis available.'])[0]
+        if "::" in plot:
+            plot = plot.split("::")[0] 
+        
+        poster_url = show.get('full-size cover url', "https://upload.wikimedia.org/wikipedia/commons/6/65/No-Image-Placeholder.svg")
+        imdb_id = show.getID()
+        imdb_url = f"https://www.imdb.com/title/tt{imdb_id}/"
+
+        return {
+            "title": f"{title} ({year})",
+            "rating": rating,
+            "episodes": total_episodes,
+            "status": status,
+            "genres": genres,
+            "synopsis": plot[:400] + "...",
+            "url": imdb_url,
+            "image": poster_url
+        }
+    except Exception as e:
+        logger.error(f"IMDb Error: {e}")
+        return None
+
+async def get_imdb_details(query):
+    return await asyncio.to_thread(fetch_imdb_sync, query)
 
 # --- Render Port Binding Web Server ---
 async def web_server():
@@ -104,7 +176,6 @@ async def web_server():
 async def start_command(client, message):
     user_id = message.from_user.id
     
-    # Wrapped in try-except so the welcome message still sends even if DB is blocked
     try:
         await users_collection.update_one(
             {"user_id": user_id}, 
@@ -114,11 +185,12 @@ async def start_command(client, message):
     except Exception as e:
         logger.error(f"MongoDB connection failed: {e}")
 
-    welcome_photo = "https://files.catbox.moe/dhatqa.jpg"
+    welcome_photo = "https://w0.peakpx.com/wallpaper/433/193/HD-wallpaper-gojo-satoru-anime-jujutsu-kaisen-satoru-gojo.jpg"
     
+    # Updated Welcome Text
     welcome_text = (
         f"👋 **Hello {message.from_user.mention}!**\n\n"
-        f"🎉 Welcome to the **Advanced Anime Bot**.\n"
+        f"🎉 Welcome to **MyAnimeEnglish bot**.\n"
         f"🤖 **Status:** Online & Ready\n\n"
         f"Please follow us on social media to continue or press Skip."
     )
@@ -182,21 +254,27 @@ async def main_menu(client, callback: CallbackQuery):
             if temp_row:
                 buttons.append(temp_row)
     except Exception:
-        pass # Ignore DB failure for extra buttons
+        pass 
 
-    await callback.message.edit_caption(
-        caption=text,
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
+    # Edit the existing message back to the main menu
+    try:
+        await callback.message.edit_caption(
+            caption=text,
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+    except Exception:
+        pass # Ignore if the message is already identical
 
-# --- Basic Callbacks ---
+# --- Basic Callbacks (Updated with Back Buttons) ---
 @app.on_callback_query(filters.regex("about_info"))
 async def about_handler(client, callback):
-    await callback.answer("We provide the best Anime in English Dub!", show_alert=True)
+    back_btn = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")]])
+    await callback.message.edit_caption(caption=ABOUT_TEXT, reply_markup=back_btn)
 
 @app.on_callback_query(filters.regex("terms_info"))
 async def terms_handler(client, callback):
-    await callback.answer("1. Do not spam.\n2. Enjoy the anime.", show_alert=True)
+    back_btn = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")]])
+    await callback.message.edit_caption(caption=TERMS_TEXT, reply_markup=back_btn)
 
 @app.on_callback_query(filters.regex("guide_info"))
 @flood_handler
@@ -206,7 +284,7 @@ async def guide_handler(client, callback):
         quote=True
     )
 
-# --- Search Command ---
+# --- Search Command (IMDb Version) ---
 @app.on_message(filters.command("search"))
 @flood_handler
 async def search_anime(client, message):
@@ -214,38 +292,28 @@ async def search_anime(client, message):
         await message.reply_text("⚠️ Please provide an anime name.\nExample: `/search Jujutsu Kaisen`")
         return
 
-    # Automatically sanitize input (strips "nyaa" so the API doesn't fail on raw torrent names)
     query = " ".join(message.command[1:])
-    query = query.lower().replace("nyaa", "").strip()
-
-    m = await message.reply_text(f"🔎 **Searching Database for '{query}'...**")
+    m = await message.reply_text(f"🔎 **Searching IMDb for '{query}'...**\n*(This takes a few seconds to calculate episodes)*")
     
-    details = await get_anime_details(query)
+    details = await get_imdb_details(query)
     
     if details:
-        title = details.get('title', 'Unknown')
-        score = details.get('score', 'N/A')
-        episodes = details.get('episodes', 'Unknown')
-        status = details.get('status', 'Unknown')
-        synopsis = details.get('synopsis', 'No synopsis available.')[:400] + "..."
-        url = details.get('url')
-        img_url = details['images']['jpg']['large_image_url']
-        
         caption = (
-            f"🎬 **{title}**\n\n"
-            f"⭐️ **Score:** {score}/10\n"
-            f"📺 **Episodes:** {episodes}\n"
-            f"📡 **Status:** {status}\n\n"
-            f"📖 **Synopsis:** {synopsis}\n\n"
+            f"🎬 **{details['title']}**\n\n"
+            f"⭐️ **IMDb Rating:** {details['rating']}/10\n"
+            f"📺 **Total Episodes:** {details['episodes']}\n"
+            f"📡 **Type:** {details['status']}\n"
+            f"🎭 **Genres:** {details['genres']}\n\n"
+            f"📖 **Synopsis:** {details['synopsis']}\n\n"
             f"**Bot created by MyAnimeEnglish Dub ⚡️**"
         )
         
-        btn = InlineKeyboardMarkup([[InlineKeyboardButton("More Info (MAL)", url=url)]])
+        btn = InlineKeyboardMarkup([[InlineKeyboardButton("More Info on IMDb", url=details['url'])]])
         
-        await message.reply_photo(img_url, caption=caption, reply_markup=btn)
+        await message.reply_photo(details['image'], caption=caption, reply_markup=btn)
         await m.delete()
     else:
-        await m.edit_text("❌ Anime not found. Try checking the spelling.")
+        await m.edit_text("❌ Series or Movie not found on IMDb. Try checking the spelling.")
 
     asyncio.create_task(safe_delete(message, 600))
 
@@ -257,7 +325,7 @@ async def add_anime(client, message):
         text_data = message.text.split(" ", 1)[1]
         name, link = text_data.split("|")
         await anime_collection.insert_one({"name": name.strip(), "link": link.strip()})
-        await message.reply_text(f"✅ Added **{name.strip()}** to the Anime List.")
+        await message.reply_text(f"✅ Added **{name.strip()}** to the Anime List.\nUsers will now be redirected to: {link.strip()}")
     except Exception as e:
         await message.reply_text(f"⚠️ Error. Format: `/addanime Anime Name | Post_Link`\nDB Error: {e}")
 
@@ -299,7 +367,7 @@ async def anime_list_handler(client, callback):
         return
     
     if not anime_list:
-        await callback.answer("No anime found!", show_alert=True)
+        await callback.answer("No anime found in the list yet. Admin needs to add them!", show_alert=True)
         return
 
     buttons = []
@@ -322,7 +390,7 @@ async def anime_list_handler(client, callback):
     buttons.append(nav_buttons)
 
     await callback.message.edit_caption(
-        caption=f"📂 **Anime List - Page {page+1}**\n\nClick to go to the download/watch post.",
+        caption=f"📂 **Anime List - Page {page+1}**\n\nClick an anime to go directly to its download/watch post in our channel.",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 
