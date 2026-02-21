@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import uvloop
+import functools
 from aiohttp import web
 import aiohttp
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -28,7 +29,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # --- Database Setup (MongoDB) ---
-mongo_client = AsyncIOMotorClient(Config.MONGO_URL)
+mongo_client = AsyncIOMotorClient(Config.MONGO_URL, serverSelectionTimeoutMS=5000)
 db = mongo_client["AnimeBotDB"]
 anime_collection = db["anime_list"]
 users_collection = db["users"]
@@ -43,8 +44,9 @@ app = Client(
     sleep_threshold=60 
 )
 
-# --- FloodWait Handler ---
+# --- FloodWait Handler (Fixed with functools) ---
 def flood_handler(func):
+    @functools.wraps(func)
     async def wrapper(*args, **kwargs):
         while True:
             try:
@@ -54,6 +56,11 @@ def flood_handler(func):
                 await asyncio.sleep(e.value + 1)
             except Exception as e:
                 logger.error(f"Error in {func.__name__}: {e}")
+                # Alert the chat if possible so it doesn't fail silently
+                if len(args) > 1 and hasattr(args[1], "reply_text"):
+                    try:
+                        await args[1].reply_text(f"⚠️ Command Error: `{e}`")
+                    except: pass
                 break
     return wrapper
 
@@ -97,11 +104,15 @@ async def web_server():
 async def start_command(client, message):
     user_id = message.from_user.id
     
-    await users_collection.update_one(
-        {"user_id": user_id}, 
-        {"$set": {"name": message.from_user.first_name}}, 
-        upsert=True
-    )
+    # Wrapped in try-except so the welcome message still sends even if DB is blocked
+    try:
+        await users_collection.update_one(
+            {"user_id": user_id}, 
+            {"$set": {"name": message.from_user.first_name}}, 
+            upsert=True
+        )
+    except Exception as e:
+        logger.error(f"MongoDB connection failed: {e}")
 
     welcome_photo = "https://i.pinimg.com/originals/82/32/73/82327341cb82442488a03362a2656360.gif"
     
@@ -159,16 +170,19 @@ async def main_menu(client, callback: CallbackQuery):
         ]
     ]
 
-    extra_btns = await buttons_collection.find().to_list(length=10)
-    if extra_btns:
-        temp_row = []
-        for btn in extra_btns:
-            temp_row.append(InlineKeyboardButton(btn['name'], url=btn['link']))
-            if len(temp_row) == 2:
+    try:
+        extra_btns = await buttons_collection.find().to_list(length=10)
+        if extra_btns:
+            temp_row = []
+            for btn in extra_btns:
+                temp_row.append(InlineKeyboardButton(btn['name'], url=btn['link']))
+                if len(temp_row) == 2:
+                    buttons.append(temp_row)
+                    temp_row = []
+            if temp_row:
                 buttons.append(temp_row)
-                temp_row = []
-        if temp_row:
-            buttons.append(temp_row)
+    except Exception:
+        pass # Ignore DB failure for extra buttons
 
     await callback.message.edit_caption(
         caption=text,
@@ -200,8 +214,11 @@ async def search_anime(client, message):
         await message.reply_text("⚠️ Please provide an anime name.\nExample: `/search Jujutsu Kaisen`")
         return
 
+    # Automatically sanitize input (strips "nyaa" so the API doesn't fail on raw torrent names)
     query = " ".join(message.command[1:])
-    m = await message.reply_text("🔎 **Searching Database...**")
+    query = query.lower().replace("nyaa", "").strip()
+
+    m = await message.reply_text(f"🔎 **Searching Database for '{query}'...**")
     
     details = await get_anime_details(query)
     
@@ -241,8 +258,8 @@ async def add_anime(client, message):
         name, link = text_data.split("|")
         await anime_collection.insert_one({"name": name.strip(), "link": link.strip()})
         await message.reply_text(f"✅ Added **{name.strip()}** to the Anime List.")
-    except Exception:
-        await message.reply_text("⚠️ Error. Format: `/addanime Anime Name | Post_Link`")
+    except Exception as e:
+        await message.reply_text(f"⚠️ Error. Format: `/addanime Anime Name | Post_Link`\nDB Error: {e}")
 
 @app.on_message(filters.command("addbtn") & filters.user(Config.OWNER_ID))
 @flood_handler
@@ -252,15 +269,18 @@ async def add_button(client, message):
         name, link = text_data.split("|")
         await buttons_collection.insert_one({"name": name.strip(), "link": link.strip()})
         await message.reply_text(f"✅ Added button **{name.strip()}** to Main Menu.")
-    except Exception:
-        await message.reply_text("⚠️ Error. Format: `/addbtn Button Name | Link`")
+    except Exception as e:
+        await message.reply_text(f"⚠️ Error. Format: `/addbtn Button Name | Link`\nDB Error: {e}")
 
 @app.on_message(filters.command("stats") & filters.user(Config.OWNER_ID))
 @flood_handler
 async def stats_command(client, message):
-    users_count = await users_collection.count_documents({})
-    anime_count = await anime_collection.count_documents({})
-    await message.reply_text(f"📊 **Database Stats**\n\n👥 Total Users: {users_count}\n🎬 Total Anime: {anime_count}")
+    try:
+        users_count = await users_collection.count_documents({})
+        anime_count = await anime_collection.count_documents({})
+        await message.reply_text(f"📊 **Database Stats**\n\n👥 Total Users: {users_count}\n🎬 Total Anime: {anime_count}")
+    except Exception as e:
+         await message.reply_text("⚠️ **Database Error!** Ensure your MongoDB URL is correct and your IP is whitelisted under Network Access in Atlas.")
 
 # --- Pagination ---
 @app.on_callback_query(filters.regex(r"anime_list_page_(\d+)"))
@@ -270,9 +290,13 @@ async def anime_list_handler(client, callback):
     limit = 10 
     skip = page * limit
     
-    total_anime = await anime_collection.count_documents({})
-    cursor = anime_collection.find().skip(skip).limit(limit)
-    anime_list = await cursor.to_list(length=limit)
+    try:
+        total_anime = await anime_collection.count_documents({})
+        cursor = anime_collection.find().skip(skip).limit(limit)
+        anime_list = await cursor.to_list(length=limit)
+    except Exception:
+        await callback.answer("Database connection failed!", show_alert=True)
+        return
     
     if not anime_list:
         await callback.answer("No anime found!", show_alert=True)
@@ -313,5 +337,4 @@ async def main():
     await app.stop()
 
 if __name__ == "__main__":
-    # Uses the loop we manually created at the top
     loop.run_until_complete(main())
