@@ -114,7 +114,7 @@ async def start_command(client, message):
     except Exception as e:
         logger.error(f"MongoDB connection failed: {e}")
 
-    welcome_photo = "https://i.pinimg.com/originals/82/32/73/82327341cb82442488a03362a2656360.gif"
+    welcome_photo = "https://files.catbox.moe/dhatqa.jpg"
     
     welcome_text = (
         f"👋 **Hello {message.from_user.mention}!**\n\n"
