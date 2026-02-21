@@ -23,7 +23,7 @@ class Config:
     BOT_TOKEN = os.environ.get("BOT_TOKEN", "your_bot_token_here")
     OWNER_ID = int(os.environ.get("OWNER_ID", "8072674531"))
     MONGO_URL = os.environ.get("MONGO_URL", "your_mongodb_url_here")
-    MAIN_CHANNEL_LINK = os.environ.get("MAIN_CHANNEL_LINK", "https://t.me/MyAnimeEnglishDub")
+    MAIN_CHANNEL_LINK = os.environ.get("MAIN_CHANNEL_LINK", "https://t.me/MyAnimeEnglish")
 
 # ==========================================
 # 📝 EDIT YOUR CUSTOM TEXT HERE
@@ -134,7 +134,7 @@ def fetch_imdb_sync(query):
         if "::" in plot:
             plot = plot.split("::")[0] 
         
-        poster_url = show.get('full-size cover url', "https://upload.wikimedia.org/wikipedia/commons/6/65/No-Image-Placeholder.svg")
+        poster_url = show.get('full-size cover url', "https://files.catbox.moe/dhatqa.jpg")
         imdb_id = show.getID()
         imdb_url = f"https://www.imdb.com/title/tt{imdb_id}/"
 
