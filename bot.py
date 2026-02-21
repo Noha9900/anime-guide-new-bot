@@ -22,7 +22,7 @@ class Config:
     API_HASH = os.environ.get("API_HASH", "d3ec5feee7342b692e7b5370fb9c8db7")
     BOT_TOKEN = os.environ.get("BOT_TOKEN", "your_bot_token_here")
     OWNER_ID = int(os.environ.get("OWNER_ID", "8072674531"))
-    MONGO_URL = os.environ.get("MONGO_URL", "your_mongodb_url_here")
+    MONGO_URL = os.environ.get("MONGO_URL", "mongodb+srv://leech:leech123@cluster0.fdnowvo.mongodb.net/?appName=Cluster0")
     MAIN_CHANNEL_LINK = os.environ.get("MAIN_CHANNEL_LINK", "https://t.me/MyAnimeEnglish")
 
 # ==========================================
@@ -134,6 +134,7 @@ def fetch_imdb_sync(query):
         if "::" in plot:
             plot = plot.split("::")[0] 
         
+        # Safe Wikimedia fallback image
         poster_url = show.get('full-size cover url', "https://files.catbox.moe/dhatqa.jpg")
         imdb_id = show.getID()
         imdb_url = f"https://www.imdb.com/title/tt{imdb_id}/"
@@ -185,14 +186,17 @@ async def start_command(client, message):
     except Exception as e:
         logger.error(f"MongoDB connection failed: {e}")
 
-    welcome_photo = "https://w0.peakpx.com/wallpaper/433/193/HD-wallpaper-gojo-satoru-anime-jujutsu-kaisen-satoru-gojo.jpg"
+    # Safe Wikimedia URL to prevent 400 Webpage Error
+    welcome_photo = "https://upload.wikimedia.org/wikipedia/commons/7/70/Anime_collage_2.jpg"
     
-    # Updated Welcome Text
+    # Updated Welcome Text with Anime Theme & Emojis
     welcome_text = (
-        f"👋 **Hello {message.from_user.mention}!**\n\n"
-        f"🎉 Welcome to **MyAnimeEnglish bot**.\n"
-        f"🤖 **Status:** Online & Ready\n\n"
-        f"Please follow us on social media to continue or press Skip."
+        f"✨🎌 **Konnichiwa, {message.from_user.mention}!** 🎌✨\n\n"
+        f"🎊 **Welcome to MyAnimeEnglish bot!** 🎊\n"
+        f"🎬 *Your ultimate destination for HD English Dubbed Anime* 🍿⚔️\n\n"
+        f"🤖 **Bot Status:** 🟢 *Online & Ready for Action!* ⚡️\n\n"
+        f"👇 **Quick Step:**\n"
+        f"📣 Please follow our official social media channels to support us, or press **SKIP** to dive straight into the anime list! 🚀"
     )
 
     buttons = InlineKeyboardMarkup([
@@ -256,16 +260,15 @@ async def main_menu(client, callback: CallbackQuery):
     except Exception:
         pass 
 
-    # Edit the existing message back to the main menu
     try:
         await callback.message.edit_caption(
             caption=text,
             reply_markup=InlineKeyboardMarkup(buttons)
         )
     except Exception:
-        pass # Ignore if the message is already identical
+        pass 
 
-# --- Basic Callbacks (Updated with Back Buttons) ---
+# --- Basic Callbacks ---
 @app.on_callback_query(filters.regex("about_info"))
 async def about_handler(client, callback):
     back_btn = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back to Menu", callback_data="main_menu")]])
@@ -292,7 +295,10 @@ async def search_anime(client, message):
         await message.reply_text("⚠️ Please provide an anime name.\nExample: `/search Jujutsu Kaisen`")
         return
 
+    # Automatically sanitize input to remove tracker keywords like "nyaa" so searches don't break
     query = " ".join(message.command[1:])
+    query = query.lower().replace("nyaa", "").strip()
+
     m = await message.reply_text(f"🔎 **Searching IMDb for '{query}'...**\n*(This takes a few seconds to calculate episodes)*")
     
     details = await get_imdb_details(query)
