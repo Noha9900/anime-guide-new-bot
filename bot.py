@@ -24,29 +24,9 @@ class Config:
     MONGO_URL = "mongodb+srv://leech:leech123@cluster0.fdnowvo.mongodb.net/?appName=Cluster0"
     MAIN_CHANNEL_LINK = "https://t.me/MyAnimeEnglish"
 
-# --- Professional Text Blocks ---
-ABOUT_TEXT = """
-✨ **MyAnimeEnglish Dub** ✨
-
-Your premier destination for high-quality **English Dubbed Anime**! 🎬 
-We bring you the latest episodes directly to Telegram in HD.
-
-🌟 **Why Choose Us?**
-🔥 Premium Quality
-🚀 Daily Updates
-📂 Easy Navigation
-
-Join our community and dive into the world of anime! 🎌
-"""
-
-TERMS_TEXT = """
-📜 **MyAnimeEnglish - Terms & Conditions**
-
-1️⃣ **No Spam:** Repetitive commands lead to a ban. 🚫
-2️⃣ **Support Us:** Share channel links, not direct files. 🤝
-3️⃣ **Respect:** Maintain a positive vibe. ✨
-4️⃣ **Content:** For personal viewing only. 🍿
-"""
+# --- Text Blocks ---
+ABOUT_TEXT = "✨ **MyAnimeEnglish Dub** ✨\n\nYour premier destination for HD English Dubbed Anime! 🎬"
+TERMS_TEXT = "📜 **Terms & Conditions**\n\n1. No Spam 🚫\n2. Share links, not files 🤝\n3. Stay respectful ✨"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -69,12 +49,6 @@ def flood_handler(func):
             except FloodWait as e: await asyncio.sleep(e.value + 1)
             except Exception as e: logger.error(f"Error: {e}"); break
     return wrapper
-
-@flood_handler
-async def safe_delete(message, time=600):
-    await asyncio.sleep(time)
-    try: await message.delete()
-    except: pass
 
 async def get_anime_details(query):
     url = f"https://api.jikan.moe/v4/anime"
@@ -109,12 +83,7 @@ async def start(c, m):
     try: await users_collection.update_one({"user_id": m.from_user.id}, {"$set": {"name": m.from_user.first_name}}, upsert=True)
     except: pass
     welcome_photo = "https://i.postimg.cc/pL5ZYCwc/photo-2026-02-21-16-00-36.jpg"
-    welcome_text = (
-        f"✨🎌 **Konnichiwa, {m.from_user.mention}!** 🎌✨\n\n"
-        f"🎊 **Welcome to MyAnimeEnglish bot!** 🎊\n"
-        f"🎬 *Your destination for HD English Dubbed Anime* 🍿⚔️\n\n"
-        f"🤖 **Status:** 🟢 *Online & Ready!* ⚡️"
-    )
+    welcome_text = f"✨🎌 **Konnichiwa, {m.from_user.mention}!** 🎌✨\n\nWelcome to **MyAnimeEnglish!** 🎬"
     buttons = InlineKeyboardMarkup([
         [InlineKeyboardButton("✈️ Join Channel", url=Config.MAIN_CHANNEL_LINK)],
         [InlineKeyboardButton("➡️ SKIP / CONTINUE ➡️", callback_data="main_menu")]
@@ -141,33 +110,21 @@ async def search(c, m):
     status_msg = await m.reply("🔎 **Searching Database...**")
     res = await get_anime_details(query)
     if res:
-        cap = (
-            f"🎬 **MyAnimeEnglish Search**\n\n"
-            f"📌 **Title:** `{res['title']}`\n"
-            f"📅 **Year:** `{res['year']}`\n"
-            f"🎞 **Episodes:** `{res['episodes']}`\n"
-            f"🌟 **Score:** `{res['score']}/10`\n\n"
-            f"✅ **Check our channel for download links!** 🚀"
-        )
+        cap = f"🎬 **MyAnimeEnglish Details**\n\n📌 **Title:** `{res['title']}`\n📅 **Year:** `{res['year']}`\n🌟 **Score:** `{res['score']}/10`"
         btn = InlineKeyboardMarkup([[InlineKeyboardButton("🔗 View on MAL", url=res['url'])]])
-        sent = await m.reply_photo(res['image'], caption=cap, reply_markup=btn)
+        await m.reply_photo(res['image'], caption=cap, reply_markup=btn)
         await status_msg.delete()
-        asyncio.create_task(safe_delete(sent, 600))
-    else: await status_msg.edit("❌ Anime not found. Try another name!")
+    else: await status_msg.edit("❌ Anime not found. Try a different name!")
 
-@app.on_message(filters.command("broadcast") & filters.user(Config.OWNER_ID))
-async def broadcast(c, m):
-    if not m.reply_to_message: return await m.reply("Reply to a message to broadcast it.")
-    users = await users_collection.find().to_list(None)
-    sent, failed = 0, 0
-    msg = await m.reply(f"🚀 **Broadcasting to {len(users)} users...**")
-    for user in users:
-        try:
-            await m.reply_to_message.copy(user['user_id'])
-            sent += 1
-            await asyncio.sleep(0.3) 
-        except: failed += 1
-    await msg.edit(f"✅ **Broadcast Finished!**\n\nSuccess: {sent} | Fail: {failed}")
+# --- Admin Commands ---
+@app.on_message(filters.command("addbtn") & filters.user(Config.OWNER_ID))
+async def add_btn(c, m):
+    try:
+        # Fixed logic for splitting command correctly
+        n, l = m.text.split(" ", 1)[1].split("|")
+        await buttons_collection.insert_one({"name": n.strip(), "link": l.strip()})
+        await m.reply(f"✅ Button **{n.strip()}** added to menu!")
+    except: await m.reply("Format: `/addbtn Name | Link`")
 
 @app.on_message(filters.command("addanime") & filters.user(Config.OWNER_ID))
 async def add_anime(c, m):
@@ -177,16 +134,11 @@ async def add_anime(c, m):
         await m.reply(f"✅ Added **{n.strip()}** to the list.")
     except: await m.reply("Format: `/addanime Name | Link`")
 
-@app.on_message(filters.command("stats") & filters.user(Config.OWNER_ID))
-async def stats(c, m):
-    u = await users_collection.count_documents({}); a = await anime_collection.count_documents({})
-    await m.reply(f"📊 **Bot Stats**\n\nUsers: {u}\nAnime in List: {a}")
-
+# --- Info Callbacks ---
 @app.on_callback_query(filters.regex("guide_info"))
 async def guide_cb(c, cb):
     await cb.answer()
-    await cb.message.edit_caption(caption="🔎 **Guide**\n\nTo find anime details:\n`/search [Anime Name]`\n\nExample: `/search Solo Leveling`", 
-                                  reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="main_menu")]]))
+    await cb.message.edit_caption(caption="🔎 **Guide**\n\nUse: `/search [Anime Name]`", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="main_menu")]]))
 
 @app.on_callback_query(filters.regex("about_info"))
 async def about_cb(c, cb):
@@ -196,6 +148,7 @@ async def about_cb(c, cb):
 async def terms_cb(c, cb):
     await cb.answer(); await cb.message.edit_caption(caption=TERMS_TEXT, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="main_menu")]]))
 
+# --- Pagination ---
 @app.on_callback_query(filters.regex(r"anime_list_page_(\d+)"))
 async def list_pg(c, cb):
     page = int(cb.matches[0].group(1))
